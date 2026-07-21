@@ -205,7 +205,7 @@ class MusicManager {
     }
     try { return await play.stream(url, { discordPlayerCompatibility: true }); }
     catch (primaryError) {
-      const runners = config.ytdlpPath ? [ytdlp.create(config.ytdlpPath), ytdlp] : [ytdlp];
+      const runners = config.ytdlpPath ? [ytdlp.create(config.ytdlpPath)] : [ytdlp];
       let directUrl = '';
       let fallbackError = primaryError;
       for (const runner of runners) {

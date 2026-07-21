@@ -35,6 +35,8 @@ module.exports = {
       '╰──────────────────────────────────────╯'
     ].join('\n'));
     client.user.setActivity('/play • NEXORA Music');
+    console.log(`[Runtime] FFmpeg: ${config.ffmpegPath}`);
+    console.log(`[Runtime] yt-dlp: ${config.ytdlpPath || 'bundled yt-dlp-exec'}`);
     recommendations.start(client);
   }
 };

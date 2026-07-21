@@ -66,7 +66,7 @@ async function search(query, requestedBy, count = 1) {
           noCheckCertificate: true,
           ignoreErrors: true
         });
-        const entries = data?.entries || (data?.title ? [data] : []);
+        const entries = (data?.entries || (data?.title ? [data] : [])).filter(Boolean);
         items = entries.map((info) => ({
           title: info.title || 'Unknown title',
           artist: info.uploader || info.channel || 'Unknown artist',
