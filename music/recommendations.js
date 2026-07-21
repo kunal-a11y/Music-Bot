@@ -7,14 +7,37 @@ const resolver = require('./search');
 const { voice } = require('../utils/guards');
 const { success, error } = require('../utils/embeds');
 
-const GENRES = ['pop', 'hip hop', 'indie', 'rock', 'electronic', 'R&B', 'Punjabi', 'Bollywood', 'lofi', 'Afrobeats'];
+const RECOMMENDATION_POOLS = [
+  { label: 'English Pop', queries: ['global english pop hits official audio', 'latest english pop songs official music video', 'top billboard pop songs official audio'] },
+  { label: 'Indian Hits', queries: ['latest indian songs official music video', 'trending india music hindi official audio', 'bollywood hits official music video'] },
+  { label: 'Punjabi', queries: ['latest punjabi songs official music video', 'trending punjabi music official audio', 'punjabi pop hits official music video'] },
+  { label: 'Korean / K-Pop', queries: ['latest kpop songs official music video', 'korean pop hits official audio', 'trending kpop music official video'] },
+  { label: 'Russian Pop', queries: ['russian pop hits official music video', 'latest russian songs official audio', 'trending russian music official video'] },
+  { label: 'Spanish / Latin', queries: ['latin pop hits official music video', 'reggaeton hits official audio', 'spanish songs trending official video'] },
+  { label: 'Japanese / J-Pop', queries: ['jpop hits official music video', 'latest japanese songs official audio', 'anime music hits official video'] },
+  { label: 'Arabic', queries: ['arabic pop hits official music video', 'latest arabic songs official audio', 'middle eastern music hits official video'] },
+  { label: 'Afrobeats', queries: ['afrobeats hits official music video', 'latest afrobeats songs official audio', 'trending afrobeat music official video'] },
+  { label: 'Hip Hop / Rap', queries: ['hip hop hits official music video clean', 'latest rap songs official audio', 'global hip hop hits official video'] },
+  { label: 'Electronic / EDM', queries: ['edm hits official music video', 'electronic dance music hits official audio', 'festival edm songs official video'] },
+  { label: 'Lofi / Chill', queries: ['lofi songs chill music official audio', 'chill pop songs official audio', 'relaxing music popular songs official audio'] },
+  { label: 'Rock', queries: ['rock hits official music video', 'modern rock songs official audio', 'alternative rock hits official video'] }
+];
 const CURATED_FALLBACKS = [
-  { title: 'Believer', artist: 'Imagine Dragons', duration: 204, thumbnail: 'https://i.ytimg.com/vi/7wtfhZwyrcc/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=7wtfhZwyrcc' },
-  { title: 'Faded', artist: 'Alan Walker', duration: 212, thumbnail: 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=60ItHLz5WEA' },
-  { title: 'Still Rollin', artist: 'Shubh', duration: 174, thumbnail: 'https://i.ytimg.com/vi/k85UB5b6pJU/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=k85UB5b6pJU' },
-  { title: 'Blinding Lights', artist: 'The Weeknd', duration: 200, thumbnail: 'https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=4NRXx6U8ABQ' },
-  { title: 'On & On', artist: 'Cartoon, Daniel Levi', duration: 208, thumbnail: 'https://i.ytimg.com/vi/K4DyBUG242c/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=K4DyBUG242c' },
-  { title: 'Excuses', artist: 'AP Dhillon, Gurinder Gill, Intense', duration: 176, thumbnail: 'https://i.ytimg.com/vi/vX2cDW8LUWk/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=vX2cDW8LUWk' }
+  { title: 'Believer', artist: 'Imagine Dragons', category: 'English Pop', duration: 204, thumbnail: 'https://i.ytimg.com/vi/7wtfhZwyrcc/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=7wtfhZwyrcc' },
+  { title: 'Blinding Lights', artist: 'The Weeknd', category: 'English Pop', duration: 200, thumbnail: 'https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=4NRXx6U8ABQ' },
+  { title: 'Kesariya', artist: 'Arijit Singh', category: 'Indian Hits', duration: 268, thumbnail: 'https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=BddP6PYo2gs' },
+  { title: 'Apna Bana Le', artist: 'Arijit Singh', category: 'Indian Hits', duration: 261, thumbnail: 'https://i.ytimg.com/vi/ElZfdU54Cp8/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=ElZfdU54Cp8' },
+  { title: 'Still Rollin', artist: 'Shubh', category: 'Punjabi', duration: 174, thumbnail: 'https://i.ytimg.com/vi/k85UB5b6pJU/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=k85UB5b6pJU' },
+  { title: 'Excuses', artist: 'AP Dhillon, Gurinder Gill, Intense', category: 'Punjabi', duration: 176, thumbnail: 'https://i.ytimg.com/vi/vX2cDW8LUWk/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=vX2cDW8LUWk' },
+  { title: 'Dynamite', artist: 'BTS', category: 'Korean / K-Pop', duration: 199, thumbnail: 'https://i.ytimg.com/vi/gdZLi9oWNZg/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=gdZLi9oWNZg' },
+  { title: 'How You Like That', artist: 'BLACKPINK', category: 'Korean / K-Pop', duration: 181, thumbnail: 'https://i.ytimg.com/vi/ioNng23DkIM/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=ioNng23DkIM' },
+  { title: 'Kometa', artist: 'JONY', category: 'Russian Pop', duration: 161, thumbnail: 'https://i.ytimg.com/vi/1NCzZHp-KhE/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=1NCzZHp-KhE' },
+  { title: 'Despacito', artist: 'Luis Fonsi, Daddy Yankee', category: 'Spanish / Latin', duration: 282, thumbnail: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=kJQP7kiw5Fk' },
+  { title: 'Gurenge', artist: 'LiSA', category: 'Japanese / J-Pop', duration: 237, thumbnail: 'https://i.ytimg.com/vi/CwkzK-F0Y00/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=CwkzK-F0Y00' },
+  { title: 'Ya Lili', artist: 'Balti, Hamouda', category: 'Arabic', duration: 201, thumbnail: 'https://i.ytimg.com/vi/6PsxwI4EUFY/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=6PsxwI4EUFY' },
+  { title: 'Calm Down', artist: 'Rema', category: 'Afrobeats', duration: 239, thumbnail: 'https://i.ytimg.com/vi/WcIcVapfqXw/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=WcIcVapfqXw' },
+  { title: 'Faded', artist: 'Alan Walker', category: 'Electronic / EDM', duration: 212, thumbnail: 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=60ItHLz5WEA' },
+  { title: 'On & On', artist: 'Cartoon, Daniel Levi', category: 'Electronic / EDM', duration: 208, thumbnail: 'https://i.ytimg.com/vi/K4DyBUG242c/hqdefault.jpg', url: 'https://www.youtube.com/watch?v=K4DyBUG242c' }
 ];
 let timer = null;
 let lastRecommendationWarning = 0;
@@ -26,8 +49,17 @@ function warnOnce(message, cause) {
   console.warn(`[Recommend] ${message}: ${cause.message || cause}`);
 }
 
+function nextPool(guild) {
+  guild.recommendationCursor = Number.isInteger(guild.recommendationCursor) ? guild.recommendationCursor : 0;
+  const pool = RECOMMENDATION_POOLS[guild.recommendationCursor % RECOMMENDATION_POOLS.length];
+  guild.recommendationCursor = (guild.recommendationCursor + 1) % RECOMMENDATION_POOLS.length;
+  return pool;
+}
+
 function buildSeeds(guildId, requestedBy, client) {
   const seeds = [];
+  const guild = store.guild(guildId);
+  const pool = nextPool(guild);
   const queue = client?.music?.get(guildId);
   const add = (track) => {
     if (!track?.title) return;
@@ -40,25 +72,29 @@ function buildSeeds(guildId, requestedBy, client) {
   for (const user of Object.values(store.data.users || {})) {
     user.history?.slice(0, 2).forEach(add);
   }
-  const genre = GENRES[Math.floor(Math.random() * GENRES.length)];
-  seeds.push(`best ${genre} music official audio ${new Date().getFullYear()}`);
-  return [...new Set(seeds)].slice(0, 8).map((query) => ({ query, genre, requestedBy }));
+  seeds.push(...pool.queries);
+  seeds.push(`${pool.label} popular songs official audio ${new Date().getFullYear()}`);
+  return [...new Set(seeds)].slice(0, 10).map((query) => ({ query, genre: pool.label, requestedBy }));
 }
 
-function fallback(guildId, requestedBy) {
+function fallback(guildId, requestedBy, genre = 'NEXORA Global Picks') {
   const guild = store.guild(guildId);
   const seen = new Set(guild.recommendationHistory);
-  const track = CURATED_FALLBACKS.find((item) => !seen.has(item.url)) || CURATED_FALLBACKS[Math.floor(Math.random() * CURATED_FALLBACKS.length)];
+  const categoryMatches = CURATED_FALLBACKS.filter((item) => item.category === genre);
+  const candidates = categoryMatches.length ? categoryMatches : CURATED_FALLBACKS;
+  const track = candidates.find((item) => !seen.has(item.url)) || CURATED_FALLBACKS.find((item) => !seen.has(item.url)) || candidates[Math.floor(Math.random() * candidates.length)];
   guild.recommendationHistory.push(track.url);
   guild.recommendationHistory = guild.recommendationHistory.slice(-500);
   store.save();
-  return { track: { ...track, query: track.url, source: 'youtube', requestedBy }, genre: 'NEXORA Picks' };
+  return { track: { ...track, query: track.url, source: 'youtube', requestedBy }, genre: track.category || genre };
 }
 
 async function pick(guildId, requestedBy = '0', client = null) {
   const guild = store.guild(guildId);
   const seen = new Set(guild.recommendationHistory);
+  let lastGenre = 'NEXORA Global Picks';
   for (const seed of buildSeeds(guildId, requestedBy, client)) {
+    lastGenre = seed.genre;
     try {
       const results = await search(seed.query, requestedBy, 6);
       const track = results.find((item) => !seen.has(item.url));
@@ -73,7 +109,7 @@ async function pick(guildId, requestedBy = '0', client = null) {
       continue;
     }
   }
-  return fallback(guildId, requestedBy);
+  return fallback(guildId, requestedBy, lastGenre);
 }
 
 function payload(result) {
