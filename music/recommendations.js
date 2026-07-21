@@ -77,6 +77,7 @@ async function handleButton(interaction) {
     const queue = await interaction.client.music.connect(channel, settings.musicChannelId || interaction.channelId);
     const idle = !queue.current;
     if (idle) {
+      queue.tracks = [];
       queue.current = tracks.shift();
       queue.tracks.unshift(...tracks);
     } else {
@@ -107,7 +108,7 @@ function start(client) {
   clearInterval(timer);
   timer = setInterval(() => {
     for (const guild of client.guilds.cache.values()) postForGuild(client, guild.id).catch((e) => console.warn(`[Recommend:${guild.id}]`, e.message));
-  }, 15 * 60 * 1000); // Changed to 15 minutes
+  }, 5 * 60 * 1000);
   timer.unref?.();
 }
 

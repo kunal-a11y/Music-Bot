@@ -25,6 +25,7 @@ module.exports = {
       const total = tracks.length;
       let position;
       if (wasIdle) {
+        queue.tracks = [];
         queue.current = tracks.shift();
         queue.tracks.unshift(...tracks);
         position = 1;

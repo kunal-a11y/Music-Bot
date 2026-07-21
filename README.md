@@ -65,7 +65,7 @@ Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com
 
 `/play` accepts text searches, YouTube videos/playlists, Spotify tracks/playlists/albums, SoundCloud, and direct audio URLs. Its input supports live autocomplete. Now Playing messages include previous, pause/resume, next, stop, loop, volume, shuffle, queue, and favorite controls.
 
-`/music setup` saves a player channel, recommendation channel, default volume, and autoplay preference per server. Configured recommendation channels receive one non-repeating, multi-genre recommendation every 30 minutes without mentions.
+`/music setup` saves a player channel, recommendation channel, default volume, and autoplay preference per server. Configured recommendation channels receive one non-repeating, multi-genre recommendation every 5 minutes without mentions.
 
 ## Persistence and operations
 

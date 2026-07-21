@@ -22,6 +22,9 @@ const FILTERS = {
   treble: 'treble=g=8',
   equalizer: 'superequalizer=1b=2:2b=1:3b=1:4b=1:5b=0:6b=0:7b=1:8b=2:9b=2:10b=1'
 };
+const VOICE_READY_TIMEOUT_MS = 20000;
+const VOICE_RECONNECT_DELAY_MS = 2500;
+const MAX_VOICE_RECONNECTS = 3;
 
 class MusicManager {
   constructor(client) {
@@ -52,29 +55,38 @@ class MusicManager {
   async connect(channel, textChannelId, retries = 3, isRetry = false) {
     const queue = this.ensure(channel.guild.id);
     clearTimeout(queue.leaveTimer);
+    clearTimeout(queue.reconnectTimer);
     queue.textChannelId = textChannelId || queue.textChannelId;
     queue.voiceChannelId = channel.id;
     if (queue.connection && queue.connection.joinConfig.channelId === channel.id && queue.connection.state.status === VoiceConnectionStatus.Ready) {
+      queue.reconnectAttempts = 0;
       if (isRetry) console.log(`[Voice:${channel.guild.id}] Retry successful.`);
       return queue;
     }
     
     if (queue.connection) {
+      queue.connection.removeAllListeners();
       queue.connection.destroy();
       queue.connection = null;
     }
     
-    console.log(`[Voice:${channel.guild.id}] Connecting...`);
+    if (!channel.guild.voiceAdapterCreator) {
+      throw new Error('Discord voice adapter is not available for this guild.');
+    }
+
+    console.log(`[Voice:${channel.guild.id}] Joining ${channel.name} (${channel.id})...`);
     const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,
       adapterCreator: channel.guild.voiceAdapterCreator,
+      selfMute: false,
       selfDeaf: true
     });
     queue.connection = connection;
 
-    connection.on(VoiceConnectionStatus.Signalling, () => console.log(`[Voice:${channel.guild.id}] Signalling...`));
-    connection.on(VoiceConnectionStatus.Connecting, () => console.log(`[Voice:${channel.guild.id}] Connected.`));
+    connection.on('stateChange', (oldState, newState) => {
+      console.log(`[Voice:${channel.guild.id}] ${oldState.status} -> ${newState.status}`);
+    });
 
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
       console.log(`[Voice:${channel.guild.id}] Voice disconnected.`);
@@ -85,20 +97,22 @@ class MusicManager {
         ]);
       } catch {
         if (queue.connection === connection) {
+          connection.removeAllListeners();
           connection.destroy();
           queue.connection = null;
-          const retryChannel = this.client.channels.cache.get(queue.voiceChannelId);
-          if (retryChannel) setTimeout(() => this.connect(retryChannel, queue.textChannelId).catch((e) => this.fail(queue, e)), 2000);
+          this.scheduleReconnect(queue);
         }
       }
     });
     
     try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 20000);
+      await entersState(connection, VoiceConnectionStatus.Ready, VOICE_READY_TIMEOUT_MS);
       console.log(`[Voice:${channel.guild.id}] Ready.`);
+      queue.reconnectAttempts = 0;
       if (isRetry) console.log(`[Voice:${channel.guild.id}] Retry successful.`);
     } catch (cause) {
       if (queue.connection === connection) {
+        connection.removeAllListeners();
         connection.destroy();
         queue.connection = null;
       }
@@ -107,7 +121,7 @@ class MusicManager {
         console.warn(`[Voice:${channel.guild.id}] Connection timed out. Retry ${attempt}/3`);
         return this.connect(channel, textChannelId, retries - 1, true);
       }
-      const reason = cause.name === 'AbortError' ? 'Timeout waiting for VoiceConnectionStatus.Ready (20s)' : cause.message;
+      const reason = cause.name === 'AbortError' ? `Timeout waiting for VoiceConnectionStatus.Ready (${VOICE_READY_TIMEOUT_MS / 1000}s)` : cause.message;
       throw new Error(`Voice connection failed: ${reason}`);
     }
 
@@ -116,6 +130,37 @@ class MusicManager {
     }
     this.persist(queue);
     return queue;
+  }
+  async scheduleReconnect(queue) {
+    if (queue.reconnectAttempts >= MAX_VOICE_RECONNECTS) {
+      console.warn(`[Voice:${queue.guildId}] Reconnect limit reached. Destroying stale voice connection.`);
+      this.destroy(queue.guildId);
+      return;
+    }
+    const channel = this.client.channels.cache.get(queue.voiceChannelId) || await this.client.channels.fetch(queue.voiceChannelId).catch(() => null);
+    if (!channel) {
+      this.destroy(queue.guildId);
+      return;
+    }
+    const humans = channel.members?.filter((member) => !member.user.bot).size ?? 0;
+    if (humans === 0 && !queue.twentyFourSeven) {
+      this.scheduleLeave(queue);
+      return;
+    }
+    queue.reconnectAttempts += 1;
+    console.warn(`[Voice:${queue.guildId}] Reconnect ${queue.reconnectAttempts}/${MAX_VOICE_RECONNECTS} scheduled.`);
+    clearTimeout(queue.reconnectTimer);
+    queue.reconnectTimer = setTimeout(() => {
+      this.connect(channel, queue.textChannelId, 1, true)
+        .then(() => {
+          if (queue.current && queue.player && queue.player.state.status === AudioPlayerStatus.Idle) return this.play(queue);
+          return null;
+        })
+        .catch((e) => {
+          console.error(`[Voice:${queue.guildId}] Reconnect failed:`, e.message);
+          this.scheduleReconnect(queue);
+        });
+    }, VOICE_RECONNECT_DELAY_MS);
   }
   createPlayer(queue) {
     if (queue.player) return;
@@ -278,8 +323,10 @@ class MusicManager {
     const queue = this.queues.get(guildId);
     if (!queue) return;
     clearTimeout(queue.leaveTimer);
+    clearTimeout(queue.reconnectTimer);
     queue.stopping = true;
     queue.player?.stop(true);
+    queue.connection?.removeAllListeners();
     queue.connection?.destroy();
     this.persist(queue);
     this.queues.delete(guildId);

@@ -6,7 +6,7 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName('setup').setDescription('Configure music and recommendations')
       .addChannelOption((o) => o.setName('music-channel').setDescription('Channel for player cards').addChannelTypes(ChannelType.GuildText))
-      .addChannelOption((o) => o.setName('recommendation-channel').setDescription('Channel for 30-minute recommendations').addChannelTypes(ChannelType.GuildText))
+      .addChannelOption((o) => o.setName('recommendation-channel').setDescription('Channel for 5-minute recommendations').addChannelTypes(ChannelType.GuildText))
       .addIntegerOption((o) => o.setName('default-volume').setDescription('Default volume percent').setMinValue(1).setMaxValue(200))
       .addBooleanOption((o) => o.setName('autoplay').setDescription('Enable autoplay by default'))),
   async execute(i) {
@@ -28,7 +28,7 @@ module.exports = {
     }
     return i.reply({ embeds: [success('Music setup saved',
       `Player channel: ${guild.settings.musicChannelId ? `<#${guild.settings.musicChannelId}>` : 'Current command channel'}\n` +
-      `Recommendations: ${guild.settings.recommendationChannelId ? `<#${guild.settings.recommendationChannelId}> every 15 minutes` : 'Disabled'}\n` +
+      `Recommendations: ${guild.settings.recommendationChannelId ? `<#${guild.settings.recommendationChannelId}> every 5 minutes` : 'Disabled'}\n` +
       `Default volume: **${guild.settings.defaultVolume ?? 70}%**\nAutoplay: **${guild.settings.autoplay ? 'On' : 'Off'}**`)] });
   }
 };

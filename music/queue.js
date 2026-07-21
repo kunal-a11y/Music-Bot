@@ -18,6 +18,8 @@ class MusicQueue {
     this.pausedAt = 0;
     this.pauseStarted = 0;
     this.leaveTimer = null;
+    this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
     this.votes = new Set();
     this.stopping = false;
   }
