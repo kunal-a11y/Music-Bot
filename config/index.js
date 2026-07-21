@@ -34,6 +34,7 @@ module.exports = {
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
   ffmpegPath: executable(process.env.FFMPEG_PATH, require('ffmpeg-static'), 'ffmpeg'),
   ytdlpPath: executable(process.env.YTDLP_PATH, null, 'yt-dlp'),
+  ytdlpCookies: process.env.YTDLP_COOKIES ? path.resolve(process.env.YTDLP_COOKIES) : null,
   registerCommands: process.env.REGISTER_COMMANDS !== 'false',
   colors: { primary: 0x8b5cf6, error: 0xef4444, success: 0x22c55e, dark: 0x09090b }
 };

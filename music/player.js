@@ -156,7 +156,15 @@ class MusicManager {
     queue.reconnectTimer = setTimeout(() => {
       this.connect(channel, queue.textChannelId, 1, true)
         .then(() => {
-          if (queue.current && queue.player && queue.player.state.status === AudioPlayerStatus.Idle) return this.play(queue);
+          if (queue.current && queue.player && queue.player.state.status === AudioPlayerStatus.Idle) {
+            // Voice connection is back up — if playback itself fails (e.g. source
+            // unavailable), that's a track problem, not a voice problem. Route it
+            // to fail() so the track is skipped instead of looping reconnects forever.
+            return this.play(queue).catch((playErr) => {
+              console.error(`[Voice:${queue.guildId}] Playback failed after reconnect:`, playErr.message);
+              return this.fail(queue, playErr);
+            });
+          }
           return null;
         })
         .catch((e) => {
@@ -214,7 +222,8 @@ class MusicManager {
             getUrl: true,
             format: 'bestaudio/best',
             noPlaylist: true,
-            noWarnings: true
+            noWarnings: true,
+            ...(config.ytdlpCookies ? { cookies: config.ytdlpCookies } : {})
           })).trim().split(/\r?\n/)[0];
           if (directUrl) break;
         } catch (cause) {

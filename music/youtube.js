@@ -64,7 +64,8 @@ async function search(query, requestedBy, count = 1) {
           noWarnings: true,
           noCallHome: true,
           noCheckCertificate: true,
-          ignoreErrors: true
+          ignoreErrors: true,
+          ...(config.ytdlpCookies ? { cookies: config.ytdlpCookies } : {})
         });
         const entries = (data?.entries || (data?.title ? [data] : [])).filter(Boolean);
         items = entries.map((info) => ({
