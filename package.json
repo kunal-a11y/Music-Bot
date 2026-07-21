@@ -1,0 +1,45 @@
+{
+  "name": "nexora-music",
+  "version": "1.0.0",
+  "description": "Production-ready Discord music bot with multi-source playback and persistent queues",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "check": "node scripts/check.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.17.0",
+    "discord.js": "^14.22.1",
+    "dotenv": "^17.2.3",
+    "ffmpeg-static": "^5.3.0",
+    "libsodium-wrappers": "^0.7.15",
+    "opusscript": "^0.1.1",
+    "play-dl": "^1.9.7",
+    "yt-dlp-exec": "^1.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "author": "Nexora",
+  "keywords": [
+    "discord",
+    "music",
+    "bot",
+    "audio",
+    "streaming"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nexora/music-bot"
+  },
+  "homepage": "https://github.com/nexora/music-bot#readme",
+  "bugs": {
+    "url": "https://github.com/nexora/music-bot/issues"
+  },
+  "license": "MIT"
+}
