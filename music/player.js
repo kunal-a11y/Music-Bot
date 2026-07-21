@@ -22,7 +22,6 @@ const FILTERS = {
   treble: 'treble=g=8',
   equalizer: 'superequalizer=1b=2:2b=1:3b=1:4b=1:5b=0:6b=0:7b=1:8b=2:9b=2:10b=1'
 };
-const VOICE_READY_TIMEOUT_MS = 20000;
 const VOICE_RECONNECT_DELAY_MS = 2500;
 const MAX_VOICE_RECONNECTS = 3;
 
@@ -52,7 +51,7 @@ class MusicManager {
     saved.queue = [queue.current, ...queue.tracks].filter(Boolean).slice(0, config.maxPlaylistSize);
     store.save();
   }
-  async connect(channel, textChannelId, retries = 3, isRetry = false) {
+  async connect(channel, textChannelId, retries = 0, isRetry = false) {
     const queue = this.ensure(channel.guild.id);
     clearTimeout(queue.leaveTimer);
     clearTimeout(queue.reconnectTimer);
@@ -80,12 +79,16 @@ class MusicManager {
       guildId: channel.guild.id,
       adapterCreator: channel.guild.voiceAdapterCreator,
       selfMute: false,
-      selfDeaf: true
+      selfDeaf: true,
+      debug: config.voiceDebug
     });
     queue.connection = connection;
 
     connection.on('stateChange', (oldState, newState) => {
       console.log(`[Voice:${channel.guild.id}] ${oldState.status} -> ${newState.status}`);
+    });
+    connection.on('debug', (message) => {
+      if (config.voiceDebug) console.log(`[Voice:${channel.guild.id}:debug] ${message}`);
     });
 
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
@@ -106,7 +109,7 @@ class MusicManager {
     });
     
     try {
-      await entersState(connection, VoiceConnectionStatus.Ready, VOICE_READY_TIMEOUT_MS);
+      await entersState(connection, VoiceConnectionStatus.Ready, config.voiceReadyTimeoutMs);
       console.log(`[Voice:${channel.guild.id}] Ready.`);
       queue.reconnectAttempts = 0;
       if (isRetry) console.log(`[Voice:${channel.guild.id}] Retry successful.`);
@@ -121,8 +124,8 @@ class MusicManager {
         console.warn(`[Voice:${channel.guild.id}] Connection timed out. Retry ${attempt}/3`);
         return this.connect(channel, textChannelId, retries - 1, true);
       }
-      const reason = cause.name === 'AbortError' ? `Timeout waiting for VoiceConnectionStatus.Ready (${VOICE_READY_TIMEOUT_MS / 1000}s)` : cause.message;
-      throw new Error(`Voice connection failed: ${reason}`);
+      const reason = cause.name === 'AbortError' ? `Timeout waiting for VoiceConnectionStatus.Ready (${config.voiceReadyTimeoutMs / 1000}s)` : cause.message;
+      throw new Error(`Voice connection failed: ${reason}. If this happens on Ubuntu/Oracle while logs loop connecting -> signalling, check outbound UDP voice traffic and IPv6/network routing.`);
     }
 
     if (queue.player && queue.connection === connection) {

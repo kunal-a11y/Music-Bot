@@ -28,6 +28,8 @@ module.exports = {
   djRoleId: process.env.DJ_ROLE_ID || null,
   leaveTimeoutMs: number(process.env.LEAVE_TIMEOUT_MS, 300000, 30000, 3600000),
   defaultVolume: number(process.env.DEFAULT_VOLUME, 70, 1, 200),
+  voiceReadyTimeoutMs: number(process.env.VOICE_READY_TIMEOUT_MS, 20000, 5000, 60000),
+  voiceDebug: process.env.VOICE_DEBUG === 'true',
   maxPlaylistSize: number(process.env.MAX_PLAYLIST_SIZE, 500, 1, 5000),
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
   ffmpegPath: executable(process.env.FFMPEG_PATH, require('ffmpeg-static'), 'ffmpeg'),
