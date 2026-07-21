@@ -3,6 +3,18 @@ const ytdlp = require('yt-dlp-exec');
 const config = require('../config');
 const cache = new Map();
 const CACHE_TTL = 15 * 60 * 1000;
+let lastBotChallengeLog = 0;
+
+function isBotChallenge(cause) {
+  return /sign in to confirm|not a bot|confirm you're not a bot|429|too many requests/i.test(cause?.message || String(cause || ''));
+}
+
+function warnBotChallenge(cause) {
+  const now = Date.now();
+  if (now - lastBotChallengeLog < 10 * 60 * 1000) return;
+  lastBotChallengeLog = now;
+  console.warn(`[YouTube] Search temporarily blocked by provider: ${cause.message || cause}`);
+}
 
 function track(info, requestedBy) {
   return {
@@ -39,27 +51,39 @@ async function search(query, requestedBy, count = 1) {
     const results = await play.search(query, { limit: count, source: { youtube: 'video' } });
     items = results.map((item) => track(item, requestedBy));
   } catch (cause) {
+    if (isBotChallenge(cause)) {
+      warnBotChallenge(cause);
+      return [];
+    }
     if (cause.message?.includes('browseId') || cause.message?.includes('videoRenderer') || cause.message?.includes('Parse')) {
       const runner = config.ytdlpPath ? ytdlp.create(config.ytdlpPath) : ytdlp;
-      const data = await runner(query, {
-        defaultSearch: `ytsearch${count}`,
-        dumpSingleJson: true,
-        noWarnings: true,
-        noCallHome: true,
-        noCheckCertificate: true,
-        ignoreErrors: true
-      });
-      const entries = data?.entries || (data?.title ? [data] : []);
-      items = entries.map((info) => ({
-        title: info.title || 'Unknown title',
-        artist: info.uploader || info.channel || 'Unknown artist',
-        duration: info.duration || 0,
-        thumbnail: info.thumbnail || null,
-        url: info.webpage_url || info.url,
-        query: info.webpage_url || info.url,
-        source: 'youtube',
-        requestedBy
-      }));
+      try {
+        const data = await runner(query, {
+          defaultSearch: `ytsearch${count}`,
+          dumpSingleJson: true,
+          noWarnings: true,
+          noCallHome: true,
+          noCheckCertificate: true,
+          ignoreErrors: true
+        });
+        const entries = data?.entries || (data?.title ? [data] : []);
+        items = entries.map((info) => ({
+          title: info.title || 'Unknown title',
+          artist: info.uploader || info.channel || 'Unknown artist',
+          duration: info.duration || 0,
+          thumbnail: info.thumbnail || null,
+          url: info.webpage_url || info.url,
+          query: info.webpage_url || info.url,
+          source: 'youtube',
+          requestedBy
+        }));
+      } catch (fallbackCause) {
+        if (isBotChallenge(fallbackCause)) {
+          warnBotChallenge(fallbackCause);
+          return [];
+        }
+        throw fallbackCause;
+      }
     } else {
       throw cause;
     }

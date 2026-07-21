@@ -360,7 +360,11 @@ class MusicManager {
     ];
   }
   async announce(queue) {
-    const channel = this.client.channels.cache.get(queue.textChannelId);
+    let channel = this.client.channels.cache.get(queue.textChannelId);
+    if (!channel?.isTextBased?.()) {
+      const voiceChannel = this.client.channels.cache.get(queue.voiceChannelId);
+      if (voiceChannel?.isTextBased?.()) channel = voiceChannel;
+    }
     if (!channel?.isTextBased()) return;
     const message = await channel.send({ embeds: [nowPlaying(queue)], components: this.controls(queue) }).catch((cause) => {
       console.warn(`[Now Playing:${queue.guildId}] Could not send player controls: ${cause.message}`);
