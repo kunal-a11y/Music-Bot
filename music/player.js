@@ -147,9 +147,6 @@ class MusicManager {
       this.connect(channel, queue.textChannelId, 1, true)
         .then(() => {
           if (queue.current && queue.player && queue.player.state.status === AudioPlayerStatus.Idle) {
-            // Voice connection is back up — if playback itself fails (e.g. source
-            // unavailable), that's a track problem, not a voice problem. Route it
-            // to fail() so the track is skipped instead of looping reconnects forever.
             return this.play(queue).catch((playErr) => {
               console.error(`[Voice:${queue.guildId}] Playback failed after reconnect:`, playErr.message);
               return this.fail(queue, playErr);
@@ -184,7 +181,14 @@ class MusicManager {
     if (!queue.current) queue.current = queue.tracks.shift();
     if (!queue.current) return this.finish(queue);
     this.createPlayer(queue);
-    const source = await this.source(queue.current, seek, queue.filters);
+    
+    let source;
+    try {
+      source = await this.source(queue.current, seek, queue.filters);
+    } catch (cause) {
+      return this.fail(queue, cause);
+    }
+    
     const resource = createAudioResource(source.stream, { inputType: source.type, inlineVolume: true });
     resource.volume.setVolume(queue.volume / 100);
     resource.playbackDuration = seek * 1000;
@@ -289,11 +293,19 @@ class MusicManager {
     this.queues.delete(guildId);
   }
   async fail(queue, cause) {
-    console.error(`[Player:${queue.guildId}]`, cause);
+    console.error(`[Player:${queue.guildId}] Stream failed:`, cause?.message || cause);
     const channel = this.client.channels.cache.get(queue.textChannelId);
-    await channel?.send({ embeds: [error(`Could not play **${queue.current?.title || 'that track'}**. Skipping it.`)] }).catch(() => {});
+    
+    let userFriendlyError = 'An unexpected error occurred while loading the audio.';
+    if (cause?.name === 'YouTubeError') {
+      userFriendlyError = cause.message;
+    } else if (cause?.message?.includes('FFmpeg')) {
+      userFriendlyError = 'Audio decoding failed.';
+    }
+
+    await channel?.send({ embeds: [error(`Could not play **${queue.current?.title || 'that track'}**.\nReason: ${userFriendlyError}`)] }).catch(() => {});
     queue.stopping = false;
-    await this.advance(queue).catch((e) => console.error('[Player recovery]', e));
+    await this.advance(queue).catch((e) => console.error(`[Player:${queue.guildId}] Player recovery failed:`, e.message));
   }
   controls(queue) {
     const paused = queue.player?.state.status === AudioPlayerStatus.Paused;

@@ -1,4 +1,5 @@
 const { spawn } = require('node:child_process');
+const { pipeline } = require('node:stream');
 const { StreamType } = require('@discordjs/voice');
 const config = require('../../config');
 const youtubeService = require('./youtubeService');
@@ -14,25 +15,35 @@ const FILTERS = {
 
 function runFfmpeg(args, inputStream) {
   const ffmpeg = spawn(config.ffmpegPath, args, { windowsHide: true });
+  
   if (inputStream) {
-    inputStream.pipe(ffmpeg.stdin);
-    inputStream.on('error', (e) => ffmpeg.stdout.destroy(e));
+    pipeline(inputStream, ffmpeg.stdin, (err) => {
+      if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE' && err.code !== 'EPIPE') {
+        ffmpeg.stdout.destroy(err);
+      }
+    });
   }
+
   let stderr = '';
-  ffmpeg.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-1000); });
-  ffmpeg.on('error', (e) => ffmpeg.stdout.destroy(e));
-  ffmpeg.on('close', (code) => {
-    if (code && !ffmpeg.killed) ffmpeg.stdout.destroy(new Error(stderr || `FFmpeg exited ${code}`));
+  ffmpeg.stderr.on('data', (chunk) => { 
+    stderr = (stderr + chunk).toString().slice(-1000); 
   });
+  
+  ffmpeg.on('error', (e) => {
+    ffmpeg.stdout.destroy(e);
+  });
+  
+  ffmpeg.on('close', (code) => {
+    if (code && !ffmpeg.killed) {
+      ffmpeg.stdout.destroy(new Error(`[FFmpeg] Exited with code ${code}: ${stderr || 'No stderr output'}`));
+    }
+  });
+
   return ffmpeg;
 }
 
 /**
  * Builds a Discord-voice-ready audio resource for a track.
- * - 'direct' sources are handed to ffmpeg as a URL (ffmpeg does its own
- *   HTTP fetching + reconnect handling).
- * - everything else (youtube / spotify-resolved-to-youtube) is streamed
- *   in-process via youtubeService and piped into ffmpeg's stdin.
  */
 async function buildResource(track, seek = 0, filters = []) {
   const args = ['-hide_banner', '-loglevel', 'error'];
@@ -53,6 +64,12 @@ async function buildResource(track, seek = 0, filters = []) {
   args.push('-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1');
 
   const ffmpeg = runFfmpeg(args, inputStream);
+  
+  // Attach a cleanup handler directly to the output stream
+  ffmpeg.stdout.on('close', () => {
+    if (!ffmpeg.killed) ffmpeg.kill('SIGKILL');
+  });
+
   return { stream: ffmpeg.stdout, type: StreamType.Raw };
 }
 

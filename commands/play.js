@@ -12,9 +12,9 @@ module.exports = {
     try { await interaction.respond(await search.suggestions(value)); } catch { await interaction.respond([]).catch(() => {}); }
   },
   async execute(interaction) {
+    await interaction.deferReply();
     const channel = await voice(interaction);
     if (!channel) return;
-    await interaction.deferReply();
     try {
       const settings = store.guild(interaction.guildId).settings;
       const queue = await interaction.client.music.connect(channel, settings.musicChannelId || interaction.channelId);

@@ -1,18 +1,24 @@
 const { Readable } = require('node:stream');
 const { Innertube, UniversalCache } = require('youtubei.js');
 
-// -- InnerTube client (lazy singleton) --------------------------------------
-// youtubei.js talks to YouTube's InnerTube API the same way the official
-// clients do. It needs no cookies file and no external binary, which is
-// what made yt-dlp fragile on datacenter IPs (Oracle Cloud etc.).
+class YouTubeError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'YouTubeError';
+    this.code = code;
+  }
+}
+
 let clientPromise = null;
 function client() {
   if (!clientPromise) {
+    // Using ANDROID client prevents Web-specific LOGIN_REQUIRED and signature cipher issues.
     clientPromise = Innertube.create({
       cache: new UniversalCache(false),
-      generate_session_locally: true
+      generate_session_locally: true,
+      clientType: 'ANDROID'
     }).catch((cause) => {
-      clientPromise = null; // allow retry on next call instead of caching a failure forever
+      clientPromise = null;
       throw cause;
     });
   }
@@ -23,13 +29,16 @@ const searchCache = new Map();
 const CACHE_TTL = 15 * 60 * 1000;
 let lastBotChallengeLog = 0;
 
-// -- Error classification -----------------------------------------------
 function isBotChallenge(cause) {
   return /sign in to confirm|not a bot|confirm you're not a bot|429|too many requests/i.test(cause?.message || String(cause || ''));
 }
 
 function isUnavailable(cause) {
   return /private video|video unavailable|removed|deleted|not available|region|blocked|age[- ]restrict/i.test(cause?.message || String(cause || ''));
+}
+
+function isLoginRequired(cause) {
+  return /login_required|login required|sign in/i.test(cause?.message || String(cause || ''));
 }
 
 function warnBotChallenge(cause) {
@@ -40,12 +49,12 @@ function warnBotChallenge(cause) {
 }
 
 function classify(cause) {
-  if (isBotChallenge(cause)) return { code: 'bot_challenge', message: 'YouTube is temporarily rate-limiting this server.' };
-  if (isUnavailable(cause)) return { code: 'unavailable', message: 'That video is private, deleted, region-locked, or age-restricted.' };
-  return { code: 'unknown', message: cause?.message || String(cause) };
+  if (isBotChallenge(cause)) return new YouTubeError('bot_challenge', 'YouTube is temporarily rate-limiting this server.');
+  if (isLoginRequired(cause)) return new YouTubeError('login_required', 'This video requires a login (e.g., age-restricted or premium).');
+  if (isUnavailable(cause)) return new YouTubeError('unavailable', 'That video is private, deleted, region-locked, or age-restricted.');
+  return new YouTubeError('unknown', cause?.message || String(cause));
 }
 
-// -- URL helpers -----------------------------------------------------------
 function extractVideoId(input) {
   if (!input) return null;
   try {
@@ -78,7 +87,6 @@ function isYouTubeUrl(input) {
   }
 }
 
-// -- Track mapping -----------------------------------------------------
 function watchUrl(id) {
   return `https://www.youtube.com/watch?v=${id}`;
 }
@@ -125,7 +133,6 @@ function trackFromBasicInfo(info, requestedBy) {
   };
 }
 
-// -- Public API --------------------------------------------------------
 async function search(query, requestedBy, count = 1) {
   const key = `${query.toLowerCase().trim()}:${count}`;
   const cached = searchCache.get(key);
@@ -141,7 +148,7 @@ async function search(query, requestedBy, count = 1) {
       warnBotChallenge(cause);
       return [];
     }
-    throw cause;
+    throw classify(cause);
   }
 
   if (!items.length) return [];
@@ -151,28 +158,47 @@ async function search(query, requestedBy, count = 1) {
 }
 
 async function resolveYouTube(url, requestedBy, limit) {
-  const yt = await client();
-  const playlistId = extractPlaylistId(url);
-  if (playlistId) {
-    const playlist = await yt.getPlaylist(playlistId);
-    return playlist.items.slice(0, limit).map((item) => trackFromPlaylistItem(item, requestedBy));
+  try {
+    const yt = await client();
+    const playlistId = extractPlaylistId(url);
+    if (playlistId) {
+      const playlist = await yt.getPlaylist(playlistId);
+      return playlist.items.slice(0, limit).map((item) => trackFromPlaylistItem(item, requestedBy));
+    }
+    const videoId = extractVideoId(url);
+    if (!videoId) throw new YouTubeError('invalid_url', 'That YouTube link is not supported.');
+    const info = await yt.getBasicInfo(videoId);
+    return [trackFromBasicInfo(info, requestedBy)];
+  } catch (cause) {
+    if (cause instanceof YouTubeError) throw cause;
+    throw classify(cause);
   }
-  const videoId = extractVideoId(url);
-  if (!videoId) throw new Error('That YouTube link is not supported.');
-  const info = await yt.getBasicInfo(videoId);
-  return [trackFromBasicInfo(info, requestedBy)];
 }
 
-/**
- * Returns a Node Readable stream of the best available audio for a video.
- * Callers pipe this straight into ffmpeg's stdin.
- */
 async function getAudioStream(urlOrId) {
-  const yt = await client();
-  const videoId = extractVideoId(urlOrId) || urlOrId;
-  const info = await yt.getInfo(videoId);
-  const webStream = await info.download({ type: 'audio', quality: 'best' });
-  return Readable.fromWeb(webStream);
+  try {
+    const yt = await client();
+    const videoId = extractVideoId(urlOrId) || urlOrId;
+    const info = await yt.getInfo(videoId);
+    
+    if (info.playability_status?.status === 'LOGIN_REQUIRED') {
+      throw new YouTubeError('login_required', 'This video requires a login (Age-restricted or Members-only).');
+    }
+    if (info.playability_status?.status !== 'OK') {
+      throw new YouTubeError('unavailable', info.playability_status?.reason || 'Video is unavailable.');
+    }
+
+    const format = info.chooseFormat({ type: 'audio', quality: 'best' });
+    if (!format) {
+      throw new YouTubeError('no_format', 'No playable audio formats found for this video.');
+    }
+
+    const stream = await info.download({ format });
+    return Readable.fromWeb(stream);
+  } catch (cause) {
+    if (cause instanceof YouTubeError) throw cause;
+    throw classify(cause);
+  }
 }
 
 module.exports = {
@@ -184,5 +210,6 @@ module.exports = {
   isBotChallenge,
   warnBotChallenge,
   classify,
-  track: trackFromSearchResult
+  track: trackFromSearchResult,
+  YouTubeError
 };
