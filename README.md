@@ -1,13 +1,13 @@
 # NEXORA Music
 
-A modular Discord music bot for Node.js with Spotify resolution, YouTube and SoundCloud playback, direct audio streams, persistent queues, modern controls, audio filters, favorites, history, vote-skip, and 24/7 mode.
+A modular Discord music bot for Node.js with Spotify resolution, YouTube playback via youtubei.js, direct audio streams, persistent queues, modern controls, audio filters, favorites, history, vote-skip, and 24/7 mode.
 
 ## Requirements
 
 - Node.js 22 LTS or newer
 - A Discord application and bot token
 - FFmpeg (bundled through `ffmpeg-static`; a system binary can be selected with `FFMPEG_PATH`)
-- yt-dlp is installed as a project dependency; set `YTDLP_PATH` when using a custom executable
+- YouTube playback uses `youtubei.js` (the InnerTube API) — no external binary, no cookies file, no Python
 - Spotify developer credentials are optional and only needed for Spotify links
 
 ## Installation
@@ -45,7 +45,6 @@ Use `npm run dev` for automatic restarts while editing and `npm run check` for s
 | `MAX_PLAYLIST_SIZE` | No | Safety cap; defaults to 500 |
 | `DATA_DIR` | No | Persistent favorites, history, settings, and queues |
 | `FFMPEG_PATH` | No | Custom FFmpeg executable |
-| `YTDLP_PATH` | No | Custom yt-dlp executable |
 | `REGISTER_COMMANDS` | No | Set `false` when commands are managed separately |
 
 Never commit `.env`; it is ignored by Git.
@@ -63,7 +62,7 @@ Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com
 - Audio: `/filter` (bass boost, nightcore, vaporwave, 8D, treble boost, equalizer)
 - Voice/admin: `/join`, `/leave`, `/247`, `/music setup`, `/voteskip`, `/ping`, `/help`
 
-`/play` accepts text searches, YouTube videos/playlists, Spotify tracks/playlists/albums, SoundCloud, and direct audio URLs. Its input supports live autocomplete. Now Playing messages include previous, pause/resume, next, stop, loop, volume, shuffle, queue, and favorite controls.
+`/play` accepts text searches, YouTube videos/playlists, Spotify tracks/playlists/albums, and direct audio URLs. Its input supports live autocomplete. Now Playing messages include previous, pause/resume, next, stop, loop, volume, shuffle, queue, and favorite controls.
 
 `/music setup` saves a player channel, recommendation channel, default volume, and autoplay preference per server. Configured recommendation channels receive one non-repeating, multi-genre recommendation every 5 minutes without mentions.
 
@@ -77,7 +76,7 @@ For deployment, keep one bot process per token, use a current Node LTS image, pe
 
 - **Commands do not appear:** set `GUILD_ID` while testing and confirm the invite includes `applications.commands`. Global registration can take time.
 - **Joins but no audio:** check Connect/Speak permissions and ensure outbound UDP is allowed. Try a system FFmpeg installation and set `FFMPEG_PATH`.
-- **A source stops working:** video platforms change frequently. Run `npm update`; for yt-dlp, use a current executable and set `YTDLP_PATH`.
+- **A source stops working:** YouTube occasionally changes its internal API. Run `npm update youtubei.js` to pick up the latest fix; the maintainers usually patch breakage within a few days.
 - **Spotify links fail:** verify both Spotify values and that the credentials belong to the same active Spotify app.
 - **PowerShell blocks npm.ps1:** invoke `npm.cmd install` and `npm.cmd start`, or adjust PowerShell execution policy according to your organization’s policy.
 - **Native voice encryption error:** remove `node_modules` and the lockfile, then reinstall on the target Node version.

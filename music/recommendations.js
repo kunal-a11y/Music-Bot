@@ -1,5 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { search } = require('./youtube');
+const { search } = require('./services/youtubeService');
 const { base } = require('../utils/embeds');
 const { duration } = require('../utils/format');
 const store = require('../utils/store');

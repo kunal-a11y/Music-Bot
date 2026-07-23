@@ -1,27 +1,17 @@
-const { spawn } = require('child_process');
 const {
   AudioPlayerStatus, VoiceConnectionStatus, createAudioPlayer, createAudioResource,
-  entersState, joinVoiceChannel, NoSubscriberBehavior, StreamType
+  entersState, joinVoiceChannel, NoSubscriberBehavior
 } = require('@discordjs/voice');
-const play = require('play-dl');
-const ytdlp = require('yt-dlp-exec');
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType
 } = require('discord.js');
 const config = require('../config');
 const MusicQueue = require('./queue');
-const { search } = require('./youtube');
+const { search } = require('./services/youtubeService');
+const streamService = require('./services/streamService');
 const { nowPlaying, error } = require('../utils/embeds');
 const store = require('../utils/store');
 
-const FILTERS = {
-  bassboost: 'bass=g=10',
-  nightcore: 'asetrate=48000*1.25,aresample=48000,atempo=0.8',
-  vaporwave: 'asetrate=48000*0.8,aresample=48000,atempo=1.1',
-  '8d': 'apulsator=hz=0.09',
-  treble: 'treble=g=8',
-  equalizer: 'superequalizer=1b=2:2b=1:3b=1:4b=1:5b=0:6b=0:7b=1:8b=2:9b=2:10b=1'
-};
 const VOICE_RECONNECT_DELAY_MS = 2500;
 const MAX_VOICE_RECONNECTS = 3;
 
@@ -188,52 +178,7 @@ class MusicManager {
       track.duration ||= result.duration;
       track.thumbnail ||= result.thumbnail;
     }
-    const url = track.playUrl || track.query || track.url;
-    if (filters.length || seek > 0 || track.source === 'direct') {
-      const args = ['-hide_banner', '-loglevel', 'error'];
-      let inputStream = null;
-      if (track.source === 'direct') {
-        args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-i', url);
-      } else {
-        const playable = await play.stream(url, { discordPlayerCompatibility: true });
-        inputStream = playable.stream;
-        args.push('-i', 'pipe:0');
-      }
-      if (seek > 0) args.push('-ss', String(seek));
-      args.push('-vn');
-      if (filters.length) args.push('-af', filters.map((f) => FILTERS[f]).filter(Boolean).join(','));
-      args.push('-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1');
-      const ffmpeg = spawn(config.ffmpegPath, args, { windowsHide: true });
-      inputStream?.pipe(ffmpeg.stdin);
-      let stderr = '';
-      ffmpeg.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-1000); });
-      ffmpeg.on('error', (e) => ffmpeg.stdout.destroy(e));
-      ffmpeg.on('close', (code) => { if (code && !ffmpeg.killed) ffmpeg.stdout.destroy(new Error(stderr || `FFmpeg exited ${code}`)); });
-      return { stream: ffmpeg.stdout, type: StreamType.Raw };
-    }
-    try { return await play.stream(url, { discordPlayerCompatibility: true }); }
-    catch (primaryError) {
-      const runners = config.ytdlpPath ? [ytdlp.create(config.ytdlpPath)] : [ytdlp];
-      let directUrl = '';
-      let fallbackError = primaryError;
-      for (const runner of runners) {
-        try {
-          directUrl = String(await runner(url, {
-            getUrl: true,
-            format: 'bestaudio/best',
-            noPlaylist: true,
-            noWarnings: true,
-            ...(config.ytdlpCookies ? { cookies: config.ytdlpCookies } : {})
-          })).trim().split(/\r?\n/)[0];
-          if (directUrl) break;
-        } catch (cause) {
-          fallbackError = cause;
-        }
-      }
-      if (!directUrl) throw fallbackError;
-      const ffmpeg = spawn(config.ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-i', directUrl, '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'], { windowsHide: true });
-      return { stream: ffmpeg.stdout, type: StreamType.Raw };
-    }
+    return streamService.buildResource(track, seek, filters);
   }
   async play(queue, seek = 0) {
     if (!queue.current) queue.current = queue.tracks.shift();
@@ -422,5 +367,5 @@ class MusicManager {
   }
 }
 
-MusicManager.FILTERS = Object.keys(FILTERS);
+MusicManager.FILTERS = Object.keys(streamService.FILTERS);
 module.exports = MusicManager;

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { search } = require('../music/youtube');
+const { search } = require('../music/services/youtubeService');
 const { base, error } = require('../utils/embeds');
 const { duration, truncate } = require('../utils/format');
 module.exports = {

@@ -1,6 +1,6 @@
 const { Events, version } = require('discord.js');
 const config = require('../config');
-const spotify = require('../music/spotify');
+const spotify = require('../music/services/spotifyService');
 const store = require('../utils/store');
 const { setBranding } = require('../utils/embeds');
 const recommendations = require('../music/recommendations');
@@ -36,7 +36,7 @@ module.exports = {
     ].join('\n'));
     client.user.setActivity('/play • NEXORA Music');
     console.log(`[Runtime] FFmpeg: ${config.ffmpegPath}`);
-    console.log(`[Runtime] yt-dlp: ${config.ytdlpPath || 'bundled yt-dlp-exec'}`);
+    console.log('[Runtime] YouTube extraction: youtubei.js (InnerTube API, no cookies/yt-dlp)');
     recommendations.start(client);
   }
 };
