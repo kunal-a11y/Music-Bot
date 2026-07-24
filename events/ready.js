@@ -36,7 +36,7 @@ module.exports = {
     ].join('\n'));
     client.user.setActivity('/play • NEXORA Music');
     console.log(`[Runtime] FFmpeg: ${config.ffmpegPath}`);
-    console.log('[Runtime] YouTube extraction: youtubei.js (InnerTube API, no cookies/yt-dlp)');
+    console.log('[Runtime] YouTube extraction: youtubei.js (InnerTube API — no external binary, no login cookies)');
     recommendations.start(client);
   }
 };

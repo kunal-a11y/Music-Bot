@@ -22,11 +22,11 @@ module.exports = {
       if (!removed) return i.reply({ embeds: [error('That favorite does not exist.')], ephemeral: true });
       store.save(); return i.reply({ embeds: [success('Favorite removed', `Removed **${removed.title}**.`)], ephemeral: true });
     }
+    await i.deferReply();
     const channel = await voice(i);
     if (!channel) return;
     const tracks = action === 'play-all' ? user.favorites.map((t) => ({ ...t, requestedBy: i.user.id })) : user.favorites[position] ? [{ ...user.favorites[position], requestedBy: i.user.id }] : [];
-    if (!tracks.length) return i.reply({ embeds: [error('There are no matching favorites to play.')], ephemeral: true });
-    await i.deferReply();
+    if (!tracks.length) return i.editReply({ embeds: [error('There are no matching favorites to play.')] });
     const q = await i.client.music.connect(channel, i.channelId);
     const idle = !q.current; q.add(tracks); i.client.music.persist(q);
     await i.editReply({ embeds: [success('Favorites queued', `Added **${tracks.length} track${tracks.length === 1 ? '' : 's'}**.`)] });

@@ -1,44 +1,71 @@
 const { Readable } = require('node:stream');
 const { Innertube, UniversalCache } = require('youtubei.js');
 
-class YouTubeError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = 'YouTubeError';
-    this.code = code;
-  }
-}
-
+// -- InnerTube client (lazy singleton) --------------------------------------
+// youtubei.js talks to YouTube's InnerTube API the same way the official
+// clients do. It needs no cookies file and no external binary.
 let clientPromise = null;
 function client() {
   if (!clientPromise) {
-    // Using ANDROID client prevents Web-specific LOGIN_REQUIRED and signature cipher issues.
     clientPromise = Innertube.create({
       cache: new UniversalCache(false),
-      generate_session_locally: true,
-      clientType: 'ANDROID'
+      generate_session_locally: true
     }).catch((cause) => {
-      clientPromise = null;
+      clientPromise = null; // allow retry on the next call instead of caching a failure forever
       throw cause;
     });
   }
   return clientPromise;
 }
 
+// The default WEB client increasingly returns LOGIN_REQUIRED for playback
+// formats unless the request carries a signed-in session or a proof-of-origin
+// token. ANDROID/IOS clients don't carry that requirement for ordinary
+// (non age-gated, non members-only) videos, so we try them first and only
+// fall back to WEB last, per-video, with no persistent cookies involved.
+const PLAYBACK_CLIENTS = ['ANDROID', 'IOS', 'WEB'];
+
 const searchCache = new Map();
 const CACHE_TTL = 15 * 60 * 1000;
 let lastBotChallengeLog = 0;
 
+// -- Structured errors ----------------------------------------------------
+class PlaybackError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'PlaybackError';
+    this.code = code;
+  }
+}
+
+function classifyStatus(status, reason) {
+  switch (status) {
+    case undefined:
+    case 'OK':
+      return null;
+    case 'LOGIN_REQUIRED':
+      return new PlaybackError(
+        /members|join this channel/i.test(reason || '') ? 'MEMBERS_ONLY' : 'LOGIN_REQUIRED',
+        /members|join this channel/i.test(reason || '')
+          ? 'This video is members-only for its channel and cannot be played.'
+          : 'This video requires sign-in on every playback client — it is likely age-restricted or region-locked.'
+      );
+    case 'AGE_CHECK_REQUIRED':
+    case 'CONTENT_CHECK_REQUIRED':
+      return new PlaybackError('AGE_RESTRICTED', 'This video is age-restricted and cannot be played.');
+    case 'UNPLAYABLE':
+      return new PlaybackError('UNPLAYABLE', reason || 'This video is unplayable (it may have been removed).');
+    case 'LIVE_STREAM_OFFLINE':
+      return new PlaybackError('LIVE_OFFLINE', 'That livestream is not currently live.');
+    case 'ERROR':
+      return new PlaybackError('UNAVAILABLE', 'That video is unavailable — it may be private or deleted.');
+    default:
+      return new PlaybackError('UNKNOWN', reason || `Playback was blocked (${status}).`);
+  }
+}
+
 function isBotChallenge(cause) {
   return /sign in to confirm|not a bot|confirm you're not a bot|429|too many requests/i.test(cause?.message || String(cause || ''));
-}
-
-function isUnavailable(cause) {
-  return /private video|video unavailable|removed|deleted|not available|region|blocked|age[- ]restrict/i.test(cause?.message || String(cause || ''));
-}
-
-function isLoginRequired(cause) {
-  return /login_required|login required|sign in/i.test(cause?.message || String(cause || ''));
 }
 
 function warnBotChallenge(cause) {
@@ -48,13 +75,32 @@ function warnBotChallenge(cause) {
   console.warn(`[YouTube] Search temporarily blocked by provider: ${cause.message || cause}`);
 }
 
-function classify(cause) {
-  if (isBotChallenge(cause)) return new YouTubeError('bot_challenge', 'YouTube is temporarily rate-limiting this server.');
-  if (isLoginRequired(cause)) return new YouTubeError('login_required', 'This video requires a login (e.g., age-restricted or premium).');
-  if (isUnavailable(cause)) return new YouTubeError('unavailable', 'That video is private, deleted, region-locked, or age-restricted.');
-  return new YouTubeError('unknown', cause?.message || String(cause));
+/**
+ * Fetches video info, trying playback clients in order until one reports
+ * the video as actually playable. Throws a structured PlaybackError
+ * (private / age-restricted / members-only / login-required / unplayable)
+ * if none of them can play it — never a raw InnertubeError.
+ */
+async function getPlayableInfo(yt, videoId) {
+  let lastError = null;
+  for (const clientType of PLAYBACK_CLIENTS) {
+    let info;
+    try {
+      info = await yt.getInfo(videoId, { client: clientType });
+    } catch (cause) {
+      lastError = cause;
+      continue;
+    }
+    const status = info.playability_status;
+    const structured = classifyStatus(status?.status, status?.reason);
+    if (!structured) return { info, client: clientType };
+    lastError = structured;
+    console.warn(`[YouTube] ${clientType} client rejected ${videoId}: ${status?.status || 'ERROR'} (${status?.reason || 'no reason given'})`);
+  }
+  throw lastError instanceof PlaybackError ? lastError : new PlaybackError('UNKNOWN', lastError?.message || 'No playback client could play this video.');
 }
 
+// -- URL helpers -----------------------------------------------------------
 function extractVideoId(input) {
   if (!input) return null;
   try {
@@ -87,6 +133,7 @@ function isYouTubeUrl(input) {
   }
 }
 
+// -- Track mapping -----------------------------------------------------
 function watchUrl(id) {
   return `https://www.youtube.com/watch?v=${id}`;
 }
@@ -133,6 +180,7 @@ function trackFromBasicInfo(info, requestedBy) {
   };
 }
 
+// -- Public API --------------------------------------------------------
 async function search(query, requestedBy, count = 1) {
   const key = `${query.toLowerCase().trim()}:${count}`;
   const cached = searchCache.get(key);
@@ -148,7 +196,8 @@ async function search(query, requestedBy, count = 1) {
       warnBotChallenge(cause);
       return [];
     }
-    throw classify(cause);
+    console.error('[Search] YouTube search failed:', cause.message || cause);
+    throw cause;
   }
 
   if (!items.length) return [];
@@ -157,48 +206,36 @@ async function search(query, requestedBy, count = 1) {
   return items;
 }
 
+/**
+ * Resolves a YouTube URL (video or playlist) into queueable tracks.
+ * For a single video, this also validates playability up front so a
+ * private/age-restricted/members-only link fails fast with a clear
+ * message instead of only at playback time.
+ */
 async function resolveYouTube(url, requestedBy, limit) {
-  try {
-    const yt = await client();
-    const playlistId = extractPlaylistId(url);
-    if (playlistId) {
-      const playlist = await yt.getPlaylist(playlistId);
-      return playlist.items.slice(0, limit).map((item) => trackFromPlaylistItem(item, requestedBy));
-    }
-    const videoId = extractVideoId(url);
-    if (!videoId) throw new YouTubeError('invalid_url', 'That YouTube link is not supported.');
-    const info = await yt.getBasicInfo(videoId);
-    return [trackFromBasicInfo(info, requestedBy)];
-  } catch (cause) {
-    if (cause instanceof YouTubeError) throw cause;
-    throw classify(cause);
+  const yt = await client();
+  const playlistId = extractPlaylistId(url);
+  if (playlistId) {
+    const playlist = await yt.getPlaylist(playlistId);
+    return playlist.items.slice(0, limit).map((item) => trackFromPlaylistItem(item, requestedBy));
   }
+  const videoId = extractVideoId(url);
+  if (!videoId) throw new Error('That YouTube link is not supported.');
+  const { info } = await getPlayableInfo(yt, videoId);
+  return [trackFromBasicInfo(info, requestedBy)];
 }
 
+/**
+ * Returns a Node Readable stream of the best available audio for a video.
+ * Callers pipe this straight into ffmpeg's stdin. Throws a structured
+ * PlaybackError if the video cannot be played on any client.
+ */
 async function getAudioStream(urlOrId) {
-  try {
-    const yt = await client();
-    const videoId = extractVideoId(urlOrId) || urlOrId;
-    const info = await yt.getInfo(videoId);
-    
-    if (info.playability_status?.status === 'LOGIN_REQUIRED') {
-      throw new YouTubeError('login_required', 'This video requires a login (Age-restricted or Members-only).');
-    }
-    if (info.playability_status?.status !== 'OK') {
-      throw new YouTubeError('unavailable', info.playability_status?.reason || 'Video is unavailable.');
-    }
-
-    const format = info.chooseFormat({ type: 'audio', quality: 'best' });
-    if (!format) {
-      throw new YouTubeError('no_format', 'No playable audio formats found for this video.');
-    }
-
-    const stream = await info.download({ format });
-    return Readable.fromWeb(stream);
-  } catch (cause) {
-    if (cause instanceof YouTubeError) throw cause;
-    throw classify(cause);
-  }
+  const yt = await client();
+  const videoId = extractVideoId(urlOrId) || urlOrId;
+  const { info, client: clientType } = await getPlayableInfo(yt, videoId);
+  const webStream = await info.download({ type: 'audio', quality: 'best', client: clientType });
+  return Readable.fromWeb(webStream);
 }
 
 module.exports = {
@@ -209,7 +246,6 @@ module.exports = {
   extractVideoId,
   isBotChallenge,
   warnBotChallenge,
-  classify,
-  track: trackFromSearchResult,
-  YouTubeError
+  PlaybackError,
+  track: trackFromSearchResult
 };

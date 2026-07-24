@@ -4,9 +4,9 @@ const { success, error } = require('../utils/embeds');
 module.exports = {
   data: new SlashCommandBuilder().setName('join').setDescription('Join your voice channel'),
   async execute(i) {
+    await i.deferReply();
     const channel = await voice(i, { allowMove: true });
     if (!channel) return;
-    await i.deferReply();
     await i.editReply({ embeds: [success('Joining voice', `Connecting to **${channel.name}**...`)] }).catch(() => {});
     try {
       await i.client.music.connect(channel, i.channelId, 0);
