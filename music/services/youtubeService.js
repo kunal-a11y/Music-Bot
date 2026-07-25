@@ -1,6 +1,6 @@
 const { Readable } = require('node:stream');
 const { Innertube, UniversalCache, Log } = require('youtubei.js');
-const { ProxyAgent } = require('undici');
+const { ProxyAgent, fetch: undiciFetch } = require('undici');
 const config = require('../../config');
 
 // youtubei.js logs every time YouTube's page layout includes a UI element
@@ -22,7 +22,7 @@ Log.setLevel(Log.Level.ERROR);
 // came from.
 const proxyDispatcher = config.ytProxyUrl ? new ProxyAgent(config.ytProxyUrl) : null;
 const proxiedFetch = proxyDispatcher
-  ? (input, init) => fetch(input, { ...init, dispatcher: proxyDispatcher })
+  ? (input, init) => undiciFetch(input, { ...init, dispatcher: proxyDispatcher })
   : undefined; // undefined = youtubei.js uses the platform default fetch
 
 let clientPromise = null;
