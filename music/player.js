@@ -360,7 +360,7 @@ class MusicManager {
       await message.edit({ embeds: queue.current ? [nowPlaying(queue)] : [], components: queue.current ? this.controls(queue) : [] }).catch(() => {});
     });
     const progressTimer = setInterval(() => {
-      if (queue.current !== announcedTrack) return clearInterval(progressTimer);
+      if (!queue.current || queue.current !== announcedTrack) return clearInterval(progressTimer);
       message.edit({ embeds: [nowPlaying(queue)], components: this.controls(queue) }).catch(() => clearInterval(progressTimer));
     }, 15000);
     collector.on('end', () => clearInterval(progressTimer));

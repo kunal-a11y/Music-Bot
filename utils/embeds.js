@@ -19,6 +19,7 @@ function success(title, message) { return base(title, message, config.colors.suc
 
 function nowPlaying(queue) {
   const track = queue.current;
+  if (!track) return base('Queue is empty', 'Nothing is playing right now.', config.colors.error);
   const elapsed = queue.elapsed;
   return base('Now Playing')
     .setImage(track.thumbnail || null)
