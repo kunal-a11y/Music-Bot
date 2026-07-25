@@ -1,5 +1,5 @@
 const { Readable } = require('node:stream');
-const { Innertube, UniversalCache, Log, Constants } = require('youtubei.js');
+const { Innertube, UniversalCache, Log } = require('youtubei.js');
 const { ProxyAgent, fetch: undiciFetch } = require('undici');
 const config = require('../../config');
 
@@ -42,7 +42,6 @@ const proxiedFetch = proxyDispatcher
       return undiciFetch(input, { ...init, dispatcher: proxyDispatcher });
     }
   : undefined; // undefined = youtubei.js uses the platform default fetch
-const httpFetch = proxiedFetch || undiciFetch; // for our own manual requests below
 
 let clientPromise = null;
 function client() {
@@ -283,31 +282,6 @@ async function resolveYouTube(url, requestedBy, limit) {
  * next client instead of giving up.
  */
 /**
- * Fetches the whole audio stream in a single request instead of
- * youtubei.js's default behaviour for type:'audio', which is chunked
- * 10MB range-requests. Multiple sequential range-requests through a
- * shared/proxy IP are more likely to get flagged by YouTube's CDN
- * mid-stream than one continuous request — this mirrors the single-shot
- * path youtubei.js already uses internally for type:'video+audio'.
- */
-async function fetchAudioStream(yt, info, clientType) {
-  const format = info.chooseFormat({ type: 'audio', quality: 'best', client: clientType });
-  const formatUrl = await format.decipher(yt.session.player);
-  const response = await httpFetch(`${formatUrl}&cpn=${info.cpn}`, {
-    method: 'GET',
-    headers: Constants.STREAM_HEADERS,
-    redirect: 'follow'
-  });
-  if (!response.ok) {
-    throw new PlaybackError('STREAM_FETCH_FAILED', `YouTube's CDN returned HTTP ${response.status} for this video's audio.`);
-  }
-  if (!response.body) {
-    throw new PlaybackError('STREAM_FETCH_FAILED', "YouTube's CDN returned an empty response body.");
-  }
-  return Readable.fromWeb(response.body);
-}
-
-/**
  * Returns a Node Readable stream of the best available audio for a video.
  * Callers pipe this straight into ffmpeg's stdin. Throws a structured
  * PlaybackError if the video cannot be played on any client.
@@ -341,10 +315,12 @@ async function getAudioStream(urlOrId) {
     }
 
     try {
-      return await fetchAudioStream(yt, info, clientType);
+      const webStream = await info.download({ type: 'audio', quality: 'best', client: clientType });
+      return Readable.fromWeb(webStream);
     } catch (cause) {
+      const status = cause?.info?.response?.status;
       lastError = cause;
-      console.warn(`[YouTube] ${clientType} client could not produce a stream for ${videoId}: ${cause.message || cause}`);
+      console.warn(`[YouTube] ${clientType} client could not produce a stream for ${videoId}: ${cause.message || cause}${status ? ` (HTTP ${status})` : ''}`);
     }
   }
 
