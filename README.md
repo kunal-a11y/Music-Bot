@@ -45,6 +45,7 @@ Use `npm run dev` for automatic restarts while editing and `npm run check` for s
 | `MAX_PLAYLIST_SIZE` | No | Safety cap; defaults to 500 |
 | `DATA_DIR` | No | Persistent favorites, history, settings, and queues |
 | `FFMPEG_PATH` | No | Custom FFmpeg executable |
+| `YT_PROXY_URL` | No | HTTP/HTTPS proxy (`http://user:pass@host:port`) for YouTube requests — set this if logs show `IP_BLOCKED`, which is common on cloud/VPS hosting |
 | `REGISTER_COMMANDS` | No | Set `false` when commands are managed separately |
 
 Never commit `.env`; it is ignored by Git.

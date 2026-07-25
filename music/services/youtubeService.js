@@ -1,15 +1,30 @@
 const { Readable } = require('node:stream');
 const { Innertube, UniversalCache } = require('youtubei.js');
+const { ProxyAgent } = require('undici');
+const config = require('../../config');
 
 // -- InnerTube client (lazy singleton) --------------------------------------
 // youtubei.js talks to YouTube's InnerTube API the same way the official
 // clients do. It needs no cookies file and no external binary.
+//
+// If YT_PROXY_URL is set (e.g. http://user:pass@host:port), all InnerTube
+// requests are routed through it. This is the only real fix for datacenter
+// IPs (Oracle Cloud, AWS, GCP, etc.) that YouTube flags at the network level
+// — no client type, no cookie, and no library swap gets around an IP-level
+// block, because the block isn't about the request, it's about where it
+// came from.
+const proxyDispatcher = config.ytProxyUrl ? new ProxyAgent(config.ytProxyUrl) : null;
+const proxiedFetch = proxyDispatcher
+  ? (input, init) => fetch(input, { ...init, dispatcher: proxyDispatcher })
+  : undefined; // undefined = youtubei.js uses the platform default fetch
+
 let clientPromise = null;
 function client() {
   if (!clientPromise) {
     clientPromise = Innertube.create({
       cache: new UniversalCache(false),
-      generate_session_locally: true
+      generate_session_locally: true,
+      ...(proxiedFetch ? { fetch: proxiedFetch } : {})
     }).catch((cause) => {
       clientPromise = null; // allow retry on the next call instead of caching a failure forever
       throw cause;
@@ -43,13 +58,18 @@ function classifyStatus(status, reason) {
     case undefined:
     case 'OK':
       return null;
-    case 'LOGIN_REQUIRED':
+    case 'LOGIN_REQUIRED': {
+      if (/not a bot|sign in to confirm/i.test(reason || '')) {
+        return new PlaybackError('IP_BLOCKED', "YouTube is blocking this server's IP address (datacenter IPs are frequently flagged) — this is not fixable by switching client type or removing cookies.");
+      }
+      const isMembersOnly = /members|join this channel/i.test(reason || '');
       return new PlaybackError(
-        /members|join this channel/i.test(reason || '') ? 'MEMBERS_ONLY' : 'LOGIN_REQUIRED',
-        /members|join this channel/i.test(reason || '')
+        isMembersOnly ? 'MEMBERS_ONLY' : 'LOGIN_REQUIRED',
+        isMembersOnly
           ? 'This video is members-only for its channel and cannot be played.'
           : 'This video requires sign-in on every playback client — it is likely age-restricted or region-locked.'
       );
+    }
     case 'AGE_CHECK_REQUIRED':
     case 'CONTENT_CHECK_REQUIRED':
       return new PlaybackError('AGE_RESTRICTED', 'This video is age-restricted and cannot be played.');
@@ -96,6 +116,7 @@ async function getPlayableInfo(yt, videoId) {
     if (!structured) return { info, client: clientType };
     lastError = structured;
     console.warn(`[YouTube] ${clientType} client rejected ${videoId}: ${status?.status || 'ERROR'} (${status?.reason || 'no reason given'})`);
+    if (structured.code === 'IP_BLOCKED') break; // other clients will fail identically — don't waste round trips
   }
   throw lastError instanceof PlaybackError ? lastError : new PlaybackError('UNKNOWN', lastError?.message || 'No playback client could play this video.');
 }
