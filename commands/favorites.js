@@ -30,6 +30,6 @@ module.exports = {
     const q = await i.client.music.connect(channel, i.channelId);
     const idle = !q.current; q.add(tracks); i.client.music.persist(q);
     await i.editReply({ embeds: [success('Favorites queued', `Added **${tracks.length} track${tracks.length === 1 ? '' : 's'}**.`)] });
-    if (idle) await i.client.music.play(q);
+    if (idle) await i.client.music.play(q).catch((e) => i.client.music.fail(q, e));
   }
 };

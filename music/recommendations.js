@@ -174,7 +174,7 @@ async function handleButton(interaction) {
       idle ? 'Starting recommendation' : 'Recommendation queued',
       `**${idle ? queue.current.title : tracks[0].title}** ${idle ? 'is starting now' : `was added at position ${queue.tracks.length}`}.`
     )] });
-    if (idle) await interaction.client.music.play(queue);
+    if (idle) await interaction.client.music.play(queue).catch((e) => interaction.client.music.fail(queue, e));
   } catch (cause) {
     console.error('[Recommendation button]', cause);
     await interaction.editReply({ embeds: [error('I could not start that recommendation. Please try another one.')] });

@@ -290,8 +290,19 @@ class MusicManager {
   }
   async fail(queue, cause) {
     console.error(`[Player:${queue.guildId}]`, cause);
+    const track = queue.current;
+    const MAX_RETRIES = 6;
+    if (track) {
+      track._retries = (track._retries || 0) + 1;
+      if (track._retries <= MAX_RETRIES) {
+        console.warn(`[Player:${queue.guildId}] Retry ${track._retries}/${MAX_RETRIES} for "${track.title}" after: ${cause.message || cause}`);
+        queue.stopping = false;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return this.play(queue).catch((e) => this.fail(queue, e));
+      }
+    }
     const channel = this.client.channels.cache.get(queue.textChannelId);
-    await channel?.send({ embeds: [error(`Could not play **${queue.current?.title || 'that track'}**. Skipping it.`)] }).catch(() => {});
+    await channel?.send({ embeds: [error(`Could not play **${track?.title || 'that track'}** after ${MAX_RETRIES} attempts. Skipping it.`)] }).catch(() => {});
     queue.stopping = false;
     await this.advance(queue).catch((e) => console.error('[Player recovery]', e));
   }

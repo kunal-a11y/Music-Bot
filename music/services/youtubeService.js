@@ -281,16 +281,6 @@ async function resolveYouTube(url, requestedBy, limit) {
  * stream URL (e.g. a decipher failure) — in that case we move on to the
  * next client instead of giving up.
  */
-/**
- * Returns a Node Readable stream of the best available audio for a video.
- * Callers pipe this straight into ffmpeg's stdin. Throws a structured
- * PlaybackError if the video cannot be played on any client.
- *
- * Playability and downloadability are retried together per client: a
- * client can report a video as OK but still fail to produce a usable
- * stream URL (e.g. a decipher failure) — in that case we move on to the
- * next client instead of giving up.
- */
 async function getAudioStream(urlOrId) {
   const yt = await client();
   const videoId = extractVideoId(urlOrId) || urlOrId;

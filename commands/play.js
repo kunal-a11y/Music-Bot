@@ -37,7 +37,7 @@ module.exports = {
       await interaction.editReply({ embeds: [success(total > 1 ? 'Collection queued' : 'Track queued', total > 1
         ? `Added **${total} tracks** in their original order.`
         : `Added **${firstTrack.title}** • queue position ${Math.max(1, position)}`)] });
-      if (wasIdle) await interaction.client.music.play(queue);
+      if (wasIdle) await interaction.client.music.play(queue).catch((e) => interaction.client.music.fail(queue, e));
     } catch (cause) {
       console.error('[Play]', cause);
       await interaction.editReply({ embeds: [error(`Playback setup failed: ${cause.message || 'Unknown error'}`)] });
