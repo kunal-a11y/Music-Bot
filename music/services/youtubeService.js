@@ -22,7 +22,25 @@ Log.setLevel(Log.Level.ERROR);
 // came from.
 const proxyDispatcher = config.ytProxyUrl ? new ProxyAgent(config.ytProxyUrl) : null;
 const proxiedFetch = proxyDispatcher
-  ? (input, init) => undiciFetch(input, { ...init, dispatcher: proxyDispatcher })
+  ? (input, init) => {
+      // youtubei.js's HTTPClient sometimes calls fetch(Request) instead of
+      // fetch(url, init). Passing a Request straight through as `input`
+      // alongside an init object trips an undici bug ("Failed to parse URL
+      // from [object Request]"), so we unpack it into a plain (url, init)
+      // call ourselves instead of relying on undici to merge the two.
+      if (input && typeof input === 'object' && typeof input.url === 'string') {
+        const req = input;
+        return undiciFetch(req.url, {
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
+          duplex: req.body ? 'half' : undefined,
+          ...init,
+          dispatcher: proxyDispatcher
+        });
+      }
+      return undiciFetch(input, { ...init, dispatcher: proxyDispatcher });
+    }
   : undefined; // undefined = youtubei.js uses the platform default fetch
 
 let clientPromise = null;
