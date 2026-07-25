@@ -1,7 +1,14 @@
 const { Readable } = require('node:stream');
-const { Innertube, UniversalCache } = require('youtubei.js');
+const { Innertube, UniversalCache, Log } = require('youtubei.js');
 const { ProxyAgent } = require('undici');
 const config = require('../../config');
+
+// youtubei.js logs every time YouTube's page layout includes a UI element
+// it doesn't have a parser class for yet (concert ticket shelves, footnote
+// links, etc.) and JIT-generates a class on the fly. This is expected and
+// harmless — YouTube's frontend changes constantly — but it's extremely
+// noisy. Only real errors are worth surfacing in production logs.
+Log.setLevel(Log.Level.ERROR);
 
 // -- InnerTube client (lazy singleton) --------------------------------------
 // youtubei.js talks to YouTube's InnerTube API the same way the official
@@ -250,13 +257,45 @@ async function resolveYouTube(url, requestedBy, limit) {
  * Returns a Node Readable stream of the best available audio for a video.
  * Callers pipe this straight into ffmpeg's stdin. Throws a structured
  * PlaybackError if the video cannot be played on any client.
+ *
+ * Playability and downloadability are retried together per client: a
+ * client can report a video as OK but still fail to produce a usable
+ * stream URL (e.g. a decipher failure) — in that case we move on to the
+ * next client instead of giving up.
  */
 async function getAudioStream(urlOrId) {
   const yt = await client();
   const videoId = extractVideoId(urlOrId) || urlOrId;
-  const { info, client: clientType } = await getPlayableInfo(yt, videoId);
-  const webStream = await info.download({ type: 'audio', quality: 'best', client: clientType });
-  return Readable.fromWeb(webStream);
+  let lastError = null;
+
+  for (const clientType of PLAYBACK_CLIENTS) {
+    let info;
+    try {
+      info = await yt.getInfo(videoId, { client: clientType });
+    } catch (cause) {
+      lastError = cause;
+      continue;
+    }
+
+    const status = info.playability_status;
+    const structured = classifyStatus(status?.status, status?.reason);
+    if (structured) {
+      lastError = structured;
+      console.warn(`[YouTube] ${clientType} client rejected ${videoId}: ${status?.status || 'ERROR'} (${status?.reason || 'no reason given'})`);
+      if (structured.code === 'IP_BLOCKED') break; // other clients will fail identically
+      continue;
+    }
+
+    try {
+      const webStream = await info.download({ type: 'audio', quality: 'best', client: clientType });
+      return Readable.fromWeb(webStream);
+    } catch (cause) {
+      lastError = cause;
+      console.warn(`[YouTube] ${clientType} client could not produce a stream for ${videoId}: ${cause.message || cause}`);
+    }
+  }
+
+  throw lastError instanceof PlaybackError ? lastError : new PlaybackError('UNKNOWN', lastError?.message || 'No playback client could stream this video.');
 }
 
 module.exports = {
