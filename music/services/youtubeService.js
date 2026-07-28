@@ -1,5 +1,5 @@
 const { Readable } = require('node:stream');
-const { Innertube, UniversalCache, Log } = require('youtubei.js');
+const { Innertube, UniversalCache, Log, Platform } = require('youtubei.js');
 const { ProxyAgent, fetch: undiciFetch } = require('undici');
 const config = require('../../config');
 
@@ -9,6 +9,14 @@ const config = require('../../config');
 // harmless — YouTube's frontend changes constantly — but it's extremely
 // noisy. Only real errors are worth surfacing in production logs.
 Log.setLevel(Log.Level.ERROR);
+
+// Supply the evaluator shim required by youtubei.js to decipher URLs
+Platform.shim.eval = (data) => {
+  const code = (typeof data === 'object' && data !== null && typeof data.output === 'string')
+    ? data.output
+    : data;
+  return new Function(code)();
+};
 
 // -- InnerTube client (lazy singleton) --------------------------------------
 // youtubei.js talks to YouTube's InnerTube API the same way the official
@@ -79,12 +87,10 @@ function getClient(useAuth = false) {
   return defaultClientPromise;
 }
 
-// The default WEB client increasingly returns LOGIN_REQUIRED for playback
-// formats unless the request carries a signed-in session or a proof-of-origin
-// token. ANDROID/IOS clients don't carry that requirement for ordinary
-// (non age-gated, non members-only) videos, so we try them first and only
-// fall back to WEB last, per-video, with no persistent cookies involved.
-const PLAYBACK_CLIENTS = ['ANDROID', 'IOS', 'WEB'];
+// The default WEB/YTMUSIC clients require cookies or PO tokens to bypass bot checks.
+// ANDROID/IOS clients don't carry that requirement for ordinary videos, so we try YTMUSIC
+// with cookies first, then fall back to cookies-free mobile clients, and finally WEB as last resort.
+const PLAYBACK_CLIENTS = ['YTMUSIC', 'ANDROID', 'IOS', 'WEB'];
 
 const searchCache = new Map();
 const CACHE_TTL = 15 * 60 * 1000;
@@ -150,7 +156,7 @@ function warnBotChallenge(cause) {
 async function getPlayableInfo(videoId) {
   let lastError = null;
   for (const clientType of PLAYBACK_CLIENTS) {
-    const yt = await getClient(clientType === 'WEB');
+    const yt = await getClient(clientType === 'WEB' || clientType === 'YTMUSIC');
     let info;
     try {
       info = await yt.getInfo(videoId, { client: clientType });
@@ -307,7 +313,7 @@ async function getAudioStream(urlOrId) {
   let lastError = null;
 
   for (const clientType of PLAYBACK_CLIENTS) {
-    const yt = await getClient(clientType === 'WEB');
+    const yt = await getClient(clientType === 'WEB' || clientType === 'YTMUSIC');
     let info;
     try {
       info = await yt.getInfo(videoId, { client: clientType });
