@@ -43,19 +43,40 @@ const proxiedFetch = proxyDispatcher
     }
   : undefined; // undefined = youtubei.js uses the platform default fetch
 
-let clientPromise = null;
-function client() {
-  if (!clientPromise) {
-    clientPromise = Innertube.create({
+let defaultClientPromise = null;
+let authClientPromise = null;
+
+function getClient(useAuth = false) {
+  if (useAuth && config.ytCookie) {
+    if (!authClientPromise) {
+      authClientPromise = Innertube.create({
+        cache: new UniversalCache(false),
+        generate_session_locally: true,
+        ...(proxiedFetch ? { fetch: proxiedFetch } : {}),
+        ...(config.ytPoToken ? { po_token: config.ytPoToken } : {}),
+        ...(config.ytVisitorData ? { visitor_data: config.ytVisitorData } : {}),
+        cookie: config.ytCookie
+      }).catch((cause) => {
+        authClientPromise = null;
+        throw cause;
+      });
+    }
+    return authClientPromise;
+  }
+
+  if (!defaultClientPromise) {
+    defaultClientPromise = Innertube.create({
       cache: new UniversalCache(false),
       generate_session_locally: true,
-      ...(proxiedFetch ? { fetch: proxiedFetch } : {})
+      ...(proxiedFetch ? { fetch: proxiedFetch } : {}),
+      ...(config.ytPoToken ? { po_token: config.ytPoToken } : {}),
+      ...(config.ytVisitorData ? { visitor_data: config.ytVisitorData } : {})
     }).catch((cause) => {
-      clientPromise = null; // allow retry on the next call instead of caching a failure forever
+      defaultClientPromise = null;
       throw cause;
     });
   }
-  return clientPromise;
+  return defaultClientPromise;
 }
 
 // The default WEB client increasingly returns LOGIN_REQUIRED for playback
@@ -126,9 +147,10 @@ function warnBotChallenge(cause) {
  * (private / age-restricted / members-only / login-required / unplayable)
  * if none of them can play it — never a raw InnertubeError.
  */
-async function getPlayableInfo(yt, videoId) {
+async function getPlayableInfo(videoId) {
   let lastError = null;
   for (const clientType of PLAYBACK_CLIENTS) {
+    const yt = await getClient(clientType === 'WEB');
     let info;
     try {
       info = await yt.getInfo(videoId, { client: clientType });
@@ -234,7 +256,7 @@ async function search(query, requestedBy, count = 1) {
 
   let items = [];
   try {
-    const yt = await client();
+    const yt = await getClient(true);
     const results = await yt.search(query, { type: 'video' });
     items = (results.videos || []).slice(0, count).map((v) => trackFromSearchResult(v, requestedBy));
   } catch (cause) {
@@ -259,15 +281,15 @@ async function search(query, requestedBy, count = 1) {
  * message instead of only at playback time.
  */
 async function resolveYouTube(url, requestedBy, limit) {
-  const yt = await client();
   const playlistId = extractPlaylistId(url);
   if (playlistId) {
+    const yt = await getClient(true);
     const playlist = await yt.getPlaylist(playlistId);
     return playlist.items.slice(0, limit).map((item) => trackFromPlaylistItem(item, requestedBy));
   }
   const videoId = extractVideoId(url);
   if (!videoId) throw new Error('That YouTube link is not supported.');
-  const { info } = await getPlayableInfo(yt, videoId);
+  const { info } = await getPlayableInfo(videoId);
   return [trackFromBasicInfo(info, requestedBy)];
 }
 
@@ -282,11 +304,11 @@ async function resolveYouTube(url, requestedBy, limit) {
  * next client instead of giving up.
  */
 async function getAudioStream(urlOrId) {
-  const yt = await client();
   const videoId = extractVideoId(urlOrId) || urlOrId;
   let lastError = null;
 
   for (const clientType of PLAYBACK_CLIENTS) {
+    const yt = await getClient(clientType === 'WEB');
     let info;
     try {
       info = await yt.getInfo(videoId, { client: clientType });

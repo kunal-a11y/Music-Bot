@@ -34,6 +34,9 @@ module.exports = {
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
   ffmpegPath: executable(process.env.FFMPEG_PATH, require('ffmpeg-static'), 'ffmpeg'),
   ytProxyUrl: process.env.YT_PROXY_URL || null,
+  ytPoToken: process.env.YT_PO_TOKEN || null,
+  ytVisitorData: process.env.YT_VISITOR_DATA || null,
+  ytCookie: process.env.YT_COOKIE || null,
   registerCommands: process.env.REGISTER_COMMANDS !== 'false',
   colors: { primary: 0x8b5cf6, error: 0xef4444, success: 0x22c55e, dark: 0x09090b }
 };
