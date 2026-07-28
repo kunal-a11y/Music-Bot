@@ -163,7 +163,6 @@ async function getPlayableInfo(videoId) {
     if (!structured) return { info, client: clientType };
     lastError = structured;
     console.warn(`[YouTube] ${clientType} client rejected ${videoId}: ${status?.status || 'ERROR'} (${status?.reason || 'no reason given'})`);
-    if (structured.code === 'IP_BLOCKED') break; // other clients will fail identically — don't waste round trips
   }
   throw lastError instanceof PlaybackError ? lastError : new PlaybackError('UNKNOWN', lastError?.message || 'No playback client could play this video.');
 }
@@ -322,7 +321,6 @@ async function getAudioStream(urlOrId) {
     if (structured) {
       lastError = structured;
       console.warn(`[YouTube] ${clientType} client rejected ${videoId}: ${status?.status || 'ERROR'} (${status?.reason || 'no reason given'})`);
-      if (structured.code === 'IP_BLOCKED') break; // other clients will fail identically
       continue;
     }
 
